@@ -58,7 +58,7 @@ class FaceRecognition(nn.Module):
         self.fc.add_module("BN1", nn.BatchNorm1d(2048, affine=True))
         self.fc.add_module("Act_layer1", nn.ReLU())
 
-        self.fc.add_module("FC2", nn.Linear(2048, 33 * 2))
+        self.fc.add_module("FC2", nn.Linear(2048, 98 * 2))
 
     def forward(self, x):
         x = self.conv_layer(x)
