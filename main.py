@@ -3,6 +3,7 @@ from os import path
 from recog_model import FaceRecognition
 import torch.optim as optim
 import torch.nn as nn
+import torch
 from torch.utils.data import DataLoader
 
 
@@ -22,7 +23,6 @@ def train(train_loader, save_path=None):
         for i, data in enumerate(train_loader):
             inputs, labels = data
             if torch.cuda.is_available():
-                inputs = inputs.cuda()
                 labels = labels.cuda()
 
             optimizer.zero_grad()
@@ -51,7 +51,6 @@ def evaluate(val_loader, load_path):
         for i, data in enumerate(val_loader):
             inputs, labels = data
             if torch.cuda.is_available():
-                inputs = inputs.cuda()
                 labels = labels.cuda()
             outputs = net(inputs)
             loss = criterion(outputs, labels)
@@ -74,19 +73,16 @@ def predict(test_loader, load_path):
     res.write("id,landmarks\n")
     with torch.no_grad():
         for i, data in enumerate(test_loader):
-            inputs, scale_ratio = data
-            if torch.cuda.is_available():
-                inputs = inputs.cuda()
-                scale_ratio = scale_ratio.cuda()
+            inputs, _ = data
+
             outputs = net(inputs)
 
             outputs = outputs.view(-1)
-            scale_ratio = scale_ratio.view(-1)
-            outputs /= scale_ratio
-
             res.write(f"{i}")
             for j in range(98):
-                res.write(f",{(outputs[2 * j]).item():6f},{(outputs[2 * j + 1]).item():6f}")
+                res.write(
+                    f",{(outputs[2 * j]).item() * inputs.size()[3]:6f}" +
+                    f",{(outputs[2 * j + 1]).item() * inputs.size()[2]:6f}")
             res.write("\n")
 
 
@@ -99,8 +95,8 @@ epoch_num = 5
 def main():
     False
     True
-    train_ = False
-    eval_ = False
+    train_ = True
+    eval_ = True
     predict_ = True
     model_path = path.join(path.dirname(__file__), "model", "model_change_kernel_size.pth")
     labeled_imgs_path = [path.join(path.dirname(__file__), "dataset", "train", f"{i:04}.jpg")
@@ -109,11 +105,11 @@ def main():
                    for i in range(trainset_size + valset_size)]
     unlabeled_imgs_path = [path.join(path.dirname(__file__), "dataset", "test", f"{i:04}.jpg")
                            for i in range(testset_size)]
-    trainset, valset, testset = load_data(labeled_imgs_path, labels_path, unlabeled_imgs_path)
+    trainset, valset, testset = load_data_no_scaled(labeled_imgs_path, labels_path, unlabeled_imgs_path)
 
-    train_loader = DataLoader(trainset, batch_size=8, shuffle=True)
-    val_loader = DataLoader(valset, batch_size=4, shuffle=True)
-    test_loader = DataLoader(testset, batch_size=1, shuffle=False)
+    train_loader = DataLoader(trainset, batch_size=4, shuffle=True, collate_fn=collate_fn)
+    val_loader = DataLoader(valset, batch_size=4, shuffle=True, collate_fn=collate_fn)
+    test_loader = DataLoader(testset, batch_size=1, shuffle=False, collate_fn=collate_fn)
 
     print(f"CUDA? {torch.cuda.is_available()}")
     if train_:

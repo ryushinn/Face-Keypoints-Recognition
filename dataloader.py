@@ -1,8 +1,19 @@
 import cv2
 import torch
 import torch.utils.data
-from main import trainset_size, valset_size
+from os import path
+from main import trainset_size, testset_size, valset_size
 from torchvision import transforms
+from torch.utils.data import DataLoader
+
+
+def collate_fn(batch):
+    data = [batch[i][0] for i in range(len(batch))]
+    labels = [batch[i][1] for i in range(len(batch))]
+
+    if batch[0][1] is None:
+        return data, None
+    return data, torch.stack(labels, 0)
 
 
 class Dataset(torch.utils.data.Dataset):
@@ -17,6 +28,8 @@ class Dataset(torch.utils.data.Dataset):
             return self.t(self.x[idx]), torch.tensor(self.y[idx])
         elif self.ratios is not None:
             return self.t(self.x[idx]), torch.tensor(self.ratios[idx])
+        else:
+            return self.t(self.x[idx]), None
 
     def __len__(self):
         return len(self.x)
@@ -65,7 +78,7 @@ def rescale(img, target_size):
     old_size = img.shape[0:2]
 
     ratio = min([target_size[i] / old_size[i] for i in range(len(old_size))])
-    new_size = [int(old_size[i]*ratio) for i in range(len(old_size))]
+    new_size = [int(old_size[i] * ratio) for i in range(len(old_size))]
     bottom = target_size[0] - new_size[0]
     right = target_size[1] - new_size[1]
 
@@ -75,12 +88,44 @@ def rescale(img, target_size):
     return img, ratio
 
 
+def load_data_no_scaled(labeled, labels, unlabeled):
+    trainset = []
+    keypoints = []
+    testset = []
+    for img_path, label_path in zip(labeled, labels):
+        img = cv2.imread(img_path)
+        pts = open(label_path)
+        points = []
+        for i, line in enumerate(pts.readlines()):
+            point = line.split(",")
+            points.append(float(point[0]) / img.shape[1])
+            points.append(float(point[1]) / img.shape[0])
+        keypoints.append(points)
+        trainset.append(img)
+    for img_path in unlabeled:
+        img = cv2.imread(img_path)
+        testset.append(img)
+
+    trainset = Dataset(trainset, y=keypoints)
+    testset = Dataset(testset)
+
+    trainset, valset = torch.utils.data.random_split(trainset, [trainset_size, valset_size])
+
+    return trainset, valset, testset
+
+
 if __name__ == "__main__":
-    img = cv2.imread("dataset/test/0000.jpg")
-    img_gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    print(img.shape)
-    print(img_gray.shape)
-    cv2.imshow("RGB", img)
-    cv2.waitKey(0)
-    cv2.imshow("GRAY", img_gray)
-    cv2.waitKey(0)
+    labeled_imgs_path = [path.join(path.dirname(__file__), "dataset", "train", f"{i:04}.jpg")
+                         for i in range(trainset_size + valset_size)]
+    labels_path = [path.join(path.dirname(__file__), "dataset", "train", f"{i:04}.pts")
+                   for i in range(trainset_size + valset_size)]
+    unlabeled_imgs_path = [path.join(path.dirname(__file__), "dataset", "test", f"{i:04}.jpg")
+                           for i in range(testset_size)]
+    trainset, valset, testset = load_data_no_scaled(labeled_imgs_path, labels_path, unlabeled_imgs_path)
+    train_loader = DataLoader(trainset, batch_size=8, shuffle=True, collate_fn=collate_fn)
+    val_loader = DataLoader(valset, batch_size=4, shuffle=True, collate_fn=collate_fn)
+    test_loader = DataLoader(testset, batch_size=1, shuffle=False, collate_fn=collate_fn)
+    print(len(train_loader))
+    print(len(test_loader))
+    print(len(test_loader))
+    pass
